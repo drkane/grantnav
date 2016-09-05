@@ -65,13 +65,22 @@ SEARCH_SUMMARY_AGGREGATES = {
     "max_date": {"max": {"field": "awardDate"}}
 }
 
+def clean_unchanged_filters(json_query):
+    new_filter = []
+    for num, filter in enumerate(json_query["query"]["bool"]["filter"]):
+        if filter != BASIC_FILTER[num]:
+            new_filter.append(filter)
+    json_query["query"]["bool"]["filter"] = new_filter
 
-def get_results(json_query, size=10, from_=0):
+
+def get_results(json_query, size=10, from_=0, clean=False):
     es = get_es()
-    extra_context = json_query.pop('extra_context', None)
-    results = es.search(body=json_query, size=size, from_=from_, index=settings.ES_INDEX)
-    if extra_context is not None:
-        json_query['extra_context'] = extra_context
+    modified_json_query = copy.deepcopy(json_query)
+    modified_json_query.pop('extra_context', None)
+    if clean:
+        clean_unchanged_filters(modified_json_query)
+
+    results = es.search(body=modified_json_query, size=size, from_=from_, index=settings.ES_INDEX)
     return results
 
 
@@ -241,7 +250,7 @@ def get_amount_facet_fixed(request, context, original_json_query):
     main_results = context["results"]
     if current_filter:
         json_query["query"]["bool"]["filter"][2]["bool"]["should"] = []
-        results = get_results(json_query)
+        results = get_results(json_query, clean=True)
     else:
         results = context["results"]
 
@@ -310,7 +319,7 @@ def get_date_facets(request, context, original_json_query):
     if current_filter:
         json_query["query"]["bool"]["filter"][4]["bool"]["should"] = []
         create_date_aggregate(json_query)
-        results = get_results(json_query)
+        results = get_results(json_query, clean=True)
     else:
         results = context["results"]
 
@@ -376,7 +385,7 @@ def get_terms_facets(request, context, json_query, field, aggregate, bool_index,
     main_results = context["results"]
     if current_filter:
         json_query["query"]["bool"]["filter"][bool_index]["bool"]["should"] = []
-        results = get_results(json_query)
+        results = get_results(json_query, clean=True)
     else:
         results = context["results"]
 
@@ -549,7 +558,7 @@ def search(request):
 
             json_query['aggs'].update(SEARCH_SUMMARY_AGGREGATES)
 
-            results = get_results(json_query, results_size, (page - 1) * SIZE)
+            results = get_results(json_query, results_size, (page - 1) * SIZE, clean=True)
             for key in SEARCH_SUMMARY_AGGREGATES:
                 json_query["aggs"].pop(key)
 
